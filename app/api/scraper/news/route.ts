@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit, getCachedData, setCachedData } from '@/lib/cache/simple-cache';
 import { newsScraper } from '@/lib/scraper/news';
+import { getStockInfo } from '@/lib/constants/nifty50';
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,8 +34,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(cached);
     }
 
-    // Scrape news with sentiment
-    const news = await newsScraper.getNewsWithSentiment(symbol, maxResults);
+    // Get stock info for better search terms
+    const stockInfo = getStockInfo(symbol);
+    let searchQuery = symbol;
+    let searchTerms: string[] | undefined;
+
+    if (stockInfo) {
+      // Use company name for better news results
+      searchQuery = stockInfo.name;
+      searchTerms = stockInfo.searchTerms;
+    }
+
+    // Scrape news with sentiment using proper company name
+    const news = await newsScraper.getNewsWithSentiment(
+      searchQuery,
+      maxResults,
+      searchTerms
+    );
 
     // Calculate overall sentiment
     const totalSentiment = news.reduce((sum, item) => sum + item.sentimentScore, 0);
@@ -47,6 +63,9 @@ export async function GET(request: NextRequest) {
 
     const result = {
       symbol,
+      companyName: stockInfo?.name || symbol,
+      shortName: stockInfo?.shortName || symbol,
+      sector: stockInfo?.sector,
       news,
       count: news.length,
       overallSentiment,

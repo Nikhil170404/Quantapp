@@ -1,0 +1,445 @@
+/**
+ * NIFTY 50 Stocks with Instrument Keys
+ * Complete list of all 50 stocks in the NIFTY 50 index
+ */
+
+export interface Nifty50Stock {
+  rank: number;
+  name: string;
+  symbol: string;
+  isin: string;
+  instrumentKey: string;
+  sector: string;
+}
+
+export const NIFTY50_STOCKS: Nifty50Stock[] = [
+  {
+    rank: 1,
+    name: "Reliance Industries Ltd",
+    symbol: "RELIANCE",
+    isin: "INE002A01018",
+    instrumentKey: "NSE_EQ|INE002A01018",
+    sector: "Energy"
+  },
+  {
+    rank: 2,
+    name: "HDFC Bank Ltd",
+    symbol: "HDFCBANK",
+    isin: "INE040A01034",
+    instrumentKey: "NSE_EQ|INE040A01034",
+    sector: "Financial Services"
+  },
+  {
+    rank: 3,
+    name: "Bharti Airtel Ltd",
+    symbol: "BHARTIARTL",
+    isin: "INE397D01024",
+    instrumentKey: "NSE_EQ|INE397D01024",
+    sector: "Telecommunication"
+  },
+  {
+    rank: 4,
+    name: "Tata Consultancy Services Ltd",
+    symbol: "TCS",
+    isin: "INE467B01029",
+    instrumentKey: "NSE_EQ|INE467B01029",
+    sector: "Information Technology"
+  },
+  {
+    rank: 5,
+    name: "ICICI Bank Ltd",
+    symbol: "ICICIBANK",
+    isin: "INE090A01021",
+    instrumentKey: "NSE_EQ|INE090A01021",
+    sector: "Financial Services"
+  },
+  {
+    rank: 6,
+    name: "State Bank of India",
+    symbol: "SBIN",
+    isin: "INE062A01020",
+    instrumentKey: "NSE_EQ|INE062A01020",
+    sector: "Financial Services"
+  },
+  {
+    rank: 7,
+    name: "Infosys Ltd",
+    symbol: "INFY",
+    isin: "INE009A01021",
+    instrumentKey: "NSE_EQ|INE009A01021",
+    sector: "Information Technology"
+  },
+  {
+    rank: 8,
+    name: "Bajaj Finance Ltd",
+    symbol: "BAJAJFINSV",
+    isin: "INE296A01024",
+    instrumentKey: "NSE_EQ|INE296A01024",
+    sector: "Financial Services"
+  },
+  {
+    rank: 9,
+    name: "Hindustan Unilever Ltd",
+    symbol: "HINDUNILVR",
+    isin: "INE030A01027",
+    instrumentKey: "NSE_EQ|INE030A01027",
+    sector: "FMCG"
+  },
+  {
+    rank: 10,
+    name: "ITC Ltd",
+    symbol: "ITC",
+    isin: "INE154A01025",
+    instrumentKey: "NSE_EQ|INE154A01025",
+    sector: "FMCG"
+  },
+  {
+    rank: 11,
+    name: "Larsen & Toubro Ltd",
+    symbol: "LT",
+    isin: "INE018A01030",
+    instrumentKey: "NSE_EQ|INE018A01030",
+    sector: "Construction"
+  },
+  {
+    rank: 12,
+    name: "Maruti Suzuki India Ltd",
+    symbol: "MARUTI",
+    isin: "INE585B01010",
+    instrumentKey: "NSE_EQ|INE585B01010",
+    sector: "Automobile"
+  },
+  {
+    rank: 13,
+    name: "Mahindra & Mahindra Ltd",
+    symbol: "M&M",
+    isin: "INE101A01026",
+    instrumentKey: "NSE_EQ|INE101A01026",
+    sector: "Automobile"
+  },
+  {
+    rank: 14,
+    name: "HCL Technologies Ltd",
+    symbol: "HCLTECH",
+    isin: "INE860A01027",
+    instrumentKey: "NSE_EQ|INE860A01027",
+    sector: "Information Technology"
+  },
+  {
+    rank: 15,
+    name: "Sun Pharmaceutical Industries Ltd",
+    symbol: "SUNPHARMA",
+    isin: "INE044A01035",
+    instrumentKey: "NSE_EQ|INE044A01035",
+    sector: "Pharmaceuticals"
+  },
+  {
+    rank: 16,
+    name: "UltraTech Cement Ltd",
+    symbol: "ULTRACEMCO",
+    isin: "INE481G01011",
+    instrumentKey: "NSE_EQ|INE481G01011",
+    sector: "Cement"
+  },
+  {
+    rank: 17,
+    name: "Axis Bank Ltd",
+    symbol: "AXISBANK",
+    isin: "INE238A01034",
+    instrumentKey: "NSE_EQ|INE238A01034",
+    sector: "Financial Services"
+  },
+  {
+    rank: 18,
+    name: "Bajaj Finserv Ltd",
+    symbol: "BAJAJFINSV",
+    isin: "INE297A01026",
+    instrumentKey: "NSE_EQ|INE297A01026",
+    sector: "Financial Services"
+  },
+  {
+    rank: 19,
+    name: "NTPC Ltd",
+    symbol: "NTPC",
+    isin: "INE733E01010",
+    instrumentKey: "NSE_EQ|INE733E01010",
+    sector: "Energy"
+  },
+  {
+    rank: 20,
+    name: "Titan Company Ltd",
+    symbol: "TITAN",
+    isin: "INE280A01028",
+    instrumentKey: "NSE_EQ|INE280A01028",
+    sector: "Consumer Discretionary"
+  },
+  {
+    rank: 21,
+    name: "Etern Ltd",
+    symbol: "ETERN",
+    isin: "INE237A01019",
+    instrumentKey: "NSE_EQ|INE237A01019",
+    sector: "Engineering"
+  },
+  {
+    rank: 22,
+    name: "Oil & Natural Gas Corpn Ltd",
+    symbol: "ONGC",
+    isin: "INE213A01029",
+    instrumentKey: "NSE_EQ|INE213A01029",
+    sector: "Energy"
+  },
+  {
+    rank: 23,
+    name: "Bharat Electronics Ltd",
+    symbol: "BEL",
+    isin: "INE263A01024",
+    instrumentKey: "NSE_EQ|INE263A01024",
+    sector: "Consumer Discretionary"
+  },
+  {
+    rank: 24,
+    name: "Adani Enterprises Ltd",
+    symbol: "ADANIGREEN",
+    isin: "INE364U01037",
+    instrumentKey: "NSE_EQ|INE364U01037",
+    sector: "Utilities"
+  },
+  {
+    rank: 25,
+    name: "Power Grid Corporation of India Ltd",
+    symbol: "POWERGRID",
+    isin: "INE752E01010",
+    instrumentKey: "NSE_EQ|INE752E01010",
+    sector: "Utilities"
+  },
+  {
+    rank: 26,
+    name: "Wipro Ltd",
+    symbol: "WIPRO",
+    isin: "INE075A01022",
+    instrumentKey: "NSE_EQ|INE075A01022",
+    sector: "Information Technology"
+  },
+  {
+    rank: 27,
+    name: "Tata Motors Ltd",
+    symbol: "TATAMOTORS",
+    isin: "INE155A01022",
+    instrumentKey: "NSE_EQ|INE155A01022",
+    sector: "Automobile"
+  },
+  {
+    rank: 28,
+    name: "Bajaj Auto Ltd",
+    symbol: "BAJAJUTO",
+    isin: "INE917I01010",
+    instrumentKey: "NSE_EQ|INE917I01010",
+    sector: "Automobile"
+  },
+  {
+    rank: 29,
+    name: "Asian Paints Ltd",
+    symbol: "ASIANPAINT",
+    isin: "INE021A01025",
+    instrumentKey: "NSE_EQ|INE021A01025",
+    sector: "Chemicals"
+  },
+  {
+    rank: 30,
+    name: "Coal India Ltd",
+    symbol: "COALINDIA",
+    isin: "INE522D01019",
+    instrumentKey: "NSE_EQ|INE522D01019",
+    sector: "Mining"
+  },
+  {
+    rank: 31,
+    name: "Nestle India Ltd",
+    symbol: "NESTLEIND",
+    isin: "INE239A01016",
+    instrumentKey: "NSE_EQ|INE239A01016",
+    sector: "FMCG"
+  },
+  {
+    rank: 32,
+    name: "Tata Steel Ltd",
+    symbol: "TATASTEEL",
+    isin: "INE081A01020",
+    instrumentKey: "NSE_EQ|INE081A01020",
+    sector: "Metals"
+  },
+  {
+    rank: 33,
+    name: "Jio Financial Services Ltd",
+    symbol: "JIOFINANCIAL",
+    isin: "INE218W01028",
+    instrumentKey: "NSE_EQ|INE218W01028",
+    sector: "Financial Services"
+  },
+  {
+    rank: 34,
+    name: "Grasim Industries Ltd",
+    symbol: "GRASIM",
+    isin: "INE047A01021",
+    instrumentKey: "NSE_EQ|INE047A01021",
+    sector: "Chemicals"
+  },
+  {
+    rank: 35,
+    name: "Eicher Motors Ltd",
+    symbol: "EICHERMOT",
+    isin: "INE066A01025",
+    instrumentKey: "NSE_EQ|INE066A01025",
+    sector: "Automobile"
+  },
+  {
+    rank: 36,
+    name: "SBI Life Insurance Company Ltd",
+    symbol: "SBILIFE",
+    isin: "INE123A01022",
+    instrumentKey: "NSE_EQ|INE123A01022",
+    sector: "Financial Services"
+  },
+  {
+    rank: 37,
+    name: "IndusInd Bank Ltd",
+    symbol: "INDUSINDBK",
+    isin: "INE095A01012",
+    instrumentKey: "NSE_EQ|INE095A01012",
+    sector: "Financial Services"
+  },
+  {
+    rank: 38,
+    name: "BPCL Ltd",
+    symbol: "BPCL",
+    isin: "INE029A01011",
+    instrumentKey: "NSE_EQ|INE029A01011",
+    sector: "Energy"
+  },
+  {
+    rank: 39,
+    name: "Shriram Finance Ltd",
+    symbol: "SHRIRAMFIN",
+    isin: "INE306A01038",
+    instrumentKey: "NSE_EQ|INE306A01038",
+    sector: "Financial Services"
+  },
+  {
+    rank: 40,
+    name: "Dr. Reddy's Laboratories Ltd",
+    symbol: "DRREDDY",
+    isin: "INE089A01023",
+    instrumentKey: "NSE_EQ|INE089A01023",
+    sector: "Pharmaceuticals"
+  },
+  {
+    rank: 41,
+    name: "Hindalco Industries Ltd",
+    symbol: "HINDALCO",
+    isin: "INE038A01020",
+    instrumentKey: "NSE_EQ|INE038A01020",
+    sector: "Metals"
+  },
+  {
+    rank: 42,
+    name: "HDFC Ltd",
+    symbol: "HDFC",
+    isin: "INE001A01023",
+    instrumentKey: "NSE_EQ|INE001A01023",
+    sector: "Financial Services"
+  },
+  {
+    rank: 43,
+    name: "Godrej Consumer Products Ltd",
+    symbol: "GODREJCP",
+    isin: "INE102D01028",
+    instrumentKey: "NSE_EQ|INE102D01028",
+    sector: "FMCG"
+  },
+  {
+    rank: 44,
+    name: "Indian Oil Corporation Ltd",
+    symbol: "IOC",
+    isin: "INE242A01010",
+    instrumentKey: "NSE_EQ|INE242A01010",
+    sector: "Energy"
+  },
+  {
+    rank: 45,
+    name: "Lupin Ltd",
+    symbol: "LUPIN",
+    isin: "INE326A01037",
+    instrumentKey: "NSE_EQ|INE326A01037",
+    sector: "Pharmaceuticals"
+  },
+  {
+    rank: 46,
+    name: "Biocon Ltd",
+    symbol: "BIOCON",
+    isin: "INE376G01013",
+    instrumentKey: "NSE_EQ|INE376G01013",
+    sector: "Pharmaceuticals"
+  },
+  {
+    rank: 47,
+    name: "Apollo Hospitals Enterprise Ltd",
+    symbol: "APOLLOHOSP",
+    isin: "INE437B01029",
+    instrumentKey: "NSE_EQ|INE437B01029",
+    sector: "Healthcare"
+  },
+  {
+    rank: 48,
+    name: "Cipla Ltd",
+    symbol: "CIPLA",
+    isin: "INE059A01026",
+    instrumentKey: "NSE_EQ|INE059A01026",
+    sector: "Pharmaceuticals"
+  },
+  {
+    rank: 49,
+    name: "Hero MotoCorp Ltd",
+    symbol: "HEROMOTOCO",
+    isin: "INE158A01062",
+    instrumentKey: "NSE_EQ|INE158A01062",
+    sector: "Automobile"
+  },
+  {
+    rank: 50,
+    name: "LIC of India",
+    symbol: "LIC",
+    isin: "INE002B01041",
+    instrumentKey: "NSE_EQ|INE002B01041",
+    sector: "Financial Services"
+  }
+];
+
+/**
+ * Get all NIFTY 50 instrument keys
+ */
+export function getAllInstrumentKeys(): string[] {
+  return NIFTY50_STOCKS.map(stock => stock.instrumentKey);
+}
+
+/**
+ * Get stock by symbol
+ */
+export function getStockBySymbol(symbol: string): Nifty50Stock | undefined {
+  return NIFTY50_STOCKS.find(stock => stock.symbol === symbol);
+}
+
+/**
+ * Get stocks by sector
+ */
+export function getStocksBySector(sector: string): Nifty50Stock[] {
+  return NIFTY50_STOCKS.filter(stock => stock.sector === sector);
+}
+
+/**
+ * Get all unique sectors
+ */
+export function getAllSectors(): string[] {
+  const sectors = new Set(NIFTY50_STOCKS.map(stock => stock.sector));
+  return Array.from(sectors);
+}

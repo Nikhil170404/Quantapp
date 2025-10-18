@@ -11,10 +11,10 @@ export interface NewsItem {
 
 export class NewsScraper {
   private userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:90.0) Gecko/20100101 Firefox/90.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
   ];
 
   private lastRequestTime: number = 0;
@@ -46,14 +46,25 @@ export class NewsScraper {
   }
 
   /**
-   * Scrape news from DuckDuckGo search
+   * Scrape news from DuckDuckGo search with optional search terms
    */
-  async scrapeNews(query: string, maxResults: number = 10): Promise<NewsItem[]> {
+  async scrapeNews(
+    query: string,
+    maxResults: number = 10,
+    searchTerms?: string[]
+  ): Promise<NewsItem[]> {
     try {
       await this.delay();
 
+      // Use search terms if provided, otherwise use query
+      const searchQuery = searchTerms && searchTerms.length > 0
+        ? `${searchTerms[0]} stock news India latest 2025`
+        : `${query} stock news India latest 2025`;
+
+      console.log('Searching news for:', searchQuery);
+
       const response = await axios.get(
-        `https://duckduckgo.com/html/?q=${encodeURIComponent(query + ' stock news')}`,
+        `https://duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`,
         {
           headers: {
             'User-Agent': this.getRandomUserAgent(),
@@ -64,7 +75,7 @@ export class NewsScraper {
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
           },
-          timeout: 10000,
+          timeout: 15000,
         }
       );
 
@@ -83,12 +94,13 @@ export class NewsScraper {
             title,
             snippet,
             url: url || undefined,
-            source: 'DuckDuckGo',
+            source: 'Web Search',
             timestamp: new Date(),
           });
         }
       });
 
+      console.log(`Found ${results.length} news items for ${query}`);
       return results;
     } catch (error) {
       console.error('News scraping error:', error);
@@ -119,63 +131,38 @@ export class NewsScraper {
   }
 
   /**
-   * Simple sentiment analysis based on keywords
+   * Enhanced sentiment analysis with more keywords
    */
   analyzeSentiment(text: string): {
     sentiment: 'positive' | 'negative' | 'neutral';
     score: number; // -1 to 1
   } {
     const positiveKeywords = [
-      'profit',
-      'growth',
-      'bullish',
-      'surge',
-      'rally',
-      'gain',
-      'rise',
-      'up',
-      'high',
-      'record',
-      'strong',
-      'outperform',
-      'beat',
-      'upgrade',
-      'buy',
-      'positive',
-      'breakout',
-      'momentum',
+      'profit', 'growth', 'bullish', 'surge', 'rally', 'gain', 'rise',
+      'up', 'high', 'record', 'strong', 'outperform', 'beat', 'upgrade',
+      'buy', 'positive', 'breakout', 'momentum', 'expansion', 'success',
+      'innovation', 'milestone', 'achievement', 'boost', 'increase',
+      'soar', 'jump', 'advance', 'recovery', 'improvement', 'optimistic'
     ];
 
     const negativeKeywords = [
-      'loss',
-      'decline',
-      'bearish',
-      'crash',
-      'drop',
-      'fall',
-      'down',
-      'low',
-      'weak',
-      'underperform',
-      'miss',
-      'downgrade',
-      'sell',
-      'negative',
-      'breakdown',
-      'concern',
-      'risk',
+      'loss', 'decline', 'bearish', 'crash', 'drop', 'fall', 'down',
+      'low', 'weak', 'underperform', 'miss', 'downgrade', 'sell',
+      'negative', 'breakdown', 'concern', 'risk', 'slump', 'plunge',
+      'tumble', 'decrease', 'warning', 'caution', 'struggle', 'challenge',
+      'pressure', 'debt', 'default', 'fraud', 'scandal', 'crisis'
     ];
 
     const lowerText = text.toLowerCase();
     let score = 0;
 
     positiveKeywords.forEach((keyword) => {
-      const matches = (lowerText.match(new RegExp(keyword, 'g')) || []).length;
+      const matches = (lowerText.match(new RegExp(`\\b${keyword}\\b`, 'g')) || []).length;
       score += matches;
     });
 
     negativeKeywords.forEach((keyword) => {
-      const matches = (lowerText.match(new RegExp(keyword, 'g')) || []).length;
+      const matches = (lowerText.match(new RegExp(`\\b${keyword}\\b`, 'g')) || []).length;
       score -= matches;
     });
 
@@ -198,9 +185,10 @@ export class NewsScraper {
    */
   async getNewsWithSentiment(
     symbol: string,
-    maxResults: number = 10
+    maxResults: number = 10,
+    searchTerms?: string[]
   ): Promise<Array<NewsItem & { sentiment: string; sentimentScore: number }>> {
-    const news = await this.scrapeNews(symbol, maxResults);
+    const news = await this.scrapeNews(symbol, maxResults, searchTerms);
 
     return news.map((item) => {
       const analysis = this.analyzeSentiment(item.title + ' ' + item.snippet);

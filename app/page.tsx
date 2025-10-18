@@ -1,137 +1,168 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import StockChart from '@/components/charts/StockChart';
+import { Card, CardGrid } from '@/components/ui/Card';
 import StockList from '@/components/tables/StockList';
 import NewsCard from '@/components/cards/NewsCard';
-import { Card, CardGrid } from '@/components/ui/Card';
 import { formatCurrency, formatNumber, getRiskColor, getSignalColor } from '@/lib/utils';
-import { TrendingUp, TrendingDown, Activity, AlertCircle, RefreshCw, TrendingUp as TrendingUpIcon, Zap, User } from 'lucide-react';
+import { TrendingUp, TrendingDown, Activity, AlertCircle, RefreshCw, Zap, Clock, BarChart3, Filter, X } from 'lucide-react';
+import { NIFTY50_STOCKS, getMarketStatus, getAllSectors } from '@/lib/constants/nifty50';
 
-interface ScreenerData {
-  total: number;
-  byRisk: {
-    low: number;
-    medium: number;
-    high: number;
-    extreme: number;
-  };
-  bySignal: {
-    buy: number;
-    sell: number;
-  };
-  groups: {
-    buySignals: any[];
-    sellSignals: any[];
-    lowRisk: any[];
-    mediumRisk: any[];
-  };
+interface StockSignal {
+  symbol: string;
+  name: string;
+  shortName: string;
+  sector: string;
+  signal: any;
+  timestamp: string;
+  cached?: boolean;
 }
 
-interface NewsItem {
-  title: string;
-  snippet: string;
-  url?: string;
-  source?: string;
-  timestamp: Date;
-  sentiment?: 'positive' | 'negative' | 'neutral';
-  sentimentScore?: number;
+interface NewsData {
+  companyName: string;
+  shortName: string;
+  sector: string;
+  news: any[];
+  overallSentiment: 'positive' | 'negative' | 'neutral';
+  avgSentimentScore: number;
 }
 
 export default function Home() {
-  const [screenerData, setScreenerData] = useState<ScreenerData | null>(null);
-  const [selectedStock, setSelectedStock] = useState<string>('');
-  const [stockData, setStockData] = useState<any>(null);
-  const [newsData, setNewsData] = useState<any>(null);
-  const [historicalData, setHistoricalData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [allStocks, setAllStocks] = useState<StockSignal[]>([]);
+  const [filteredStocks, setFilteredStocks] = useState<StockSignal[]>([]);
+  const [selectedStock, setSelectedStock] = useState<StockSignal | null>(null);
+  const [newsData, setNewsData] = useState<NewsData | null>(null);
+  const [loading, setLoading] = useState(false);
   const [newsLoading, setNewsLoading] = useState(false);
-  const [searchSymbol, setSearchSymbol] = useState('');
-  const [error, setError] = useState<string>('');
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Filters
+  const [signalFilter, setSignalFilter] = useState<'ALL' | 'BUY' | 'SELL' | 'HOLD'>('ALL');
+  const [riskFilter, setRiskFilter] = useState<'ALL' | 'LOW' | 'MEDIUM' | 'HIGH'>('ALL');
+  const [sectorFilter, setSectorFilter] = useState<string>('ALL');
+  
+  // Market status
+  const marketStatus = getMarketStatus();
+  const allSectors = ['ALL', ...getAllSectors()];
 
-  // Fetch screener data
+  // Statistics
+  const stats = {
+    total: allStocks.length,
+    buySignals: allStocks.filter(s => s.signal?.type === 'BUY').length,
+    sellSignals: allStocks.filter(s => s.signal?.type === 'SELL').length,
+    holdSignals: allStocks.filter(s => s.signal?.type === 'HOLD').length,
+    lowRisk: allStocks.filter(s => s.signal?.riskScore?.level === 'LOW').length,
+    mediumRisk: allStocks.filter(s => s.signal?.riskScore?.level === 'MEDIUM').length,
+    highRisk: allStocks.filter(s => s.signal?.riskScore?.level === 'HIGH').length,
+    extremeRisk: allStocks.filter(s => s.signal?.riskScore?.level === 'EXTREME').length,
+  };
+
+  // Load all Nifty 50 stocks on mount
   useEffect(() => {
-    fetchScreenerData();
+    loadAllStocks();
   }, []);
 
-  // Auto-refresh interval
+  // Apply filters
   useEffect(() => {
-    if (!autoRefresh || !selectedStock) return;
+    let filtered = [...allStocks];
+
+    // Signal filter
+    if (signalFilter !== 'ALL') {
+      filtered = filtered.filter(s => s.signal?.type === signalFilter);
+    }
+
+    // Risk filter
+    if (riskFilter !== 'ALL') {
+      filtered = filtered.filter(s => s.signal?.riskScore?.level === riskFilter);
+    }
+
+    // Sector filter
+    if (sectorFilter !== 'ALL') {
+      filtered = filtered.filter(s => s.sector === sectorFilter);
+    }
+
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(s => 
+        s.name.toLowerCase().includes(query) ||
+        s.shortName.toLowerCase().includes(query) ||
+        s.symbol.toLowerCase().includes(query) ||
+        s.sector.toLowerCase().includes(query)
+      );
+    }
+
+    setFilteredStocks(filtered);
+  }, [allStocks, signalFilter, riskFilter, sectorFilter, searchQuery]);
+
+  // Auto-refresh
+  useEffect(() => {
+    if (!autoRefresh) return;
 
     const interval = setInterval(() => {
-      fetchStockSignal(selectedStock);
-      fetchStockNews(selectedStock);
-    }, 30000); // Refresh every 30 seconds
+      if (marketStatus.isOpen) {
+        loadAllStocks();
+      }
+    }, 60000); // Refresh every minute when market is open
 
     return () => clearInterval(interval);
-  }, [autoRefresh, selectedStock]);
+  }, [autoRefresh, marketStatus.isOpen]);
 
-  const fetchScreenerData = async () => {
+  const loadAllStocks = async () => {
     try {
-      setLoading(true);
-      const response = await fetch('/api/screener');
-      if (!response.ok) {
-        throw new Error('Failed to fetch screener data');
+      setBatchLoading(true);
+      
+      // First, try to get existing data
+      const response = await fetch('/api/stocks/nifty50');
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.total > 0) {
+          // We have some cached data, use it
+          const stocks = [...data.topBuy, ...data.topSell].slice(0, 50);
+          setAllStocks(stocks);
+          setLastUpdated(new Date(data.lastUpdate));
+        } else {
+          // No data, trigger batch processing
+          await triggerBatchProcess();
+        }
       }
-      const data = await response.json();
-      setScreenerData(data);
     } catch (error) {
-      console.error('Error fetching screener data:', error);
-      setScreenerData({
-        total: 0,
-        byRisk: { low: 0, medium: 0, high: 0, extreme: 0 },
-        bySignal: { buy: 0, sell: 0 },
-        groups: {
-          buySignals: [],
-          sellSignals: [],
-          lowRisk: [],
-          mediumRisk: [],
-        },
-      });
+      console.error('Error loading stocks:', error);
     } finally {
-      setLoading(false);
+      setBatchLoading(false);
     }
   };
 
-  const fetchStockSignal = async (symbol: string) => {
+  const triggerBatchProcess = async () => {
     try {
-      setLoading(true);
-      setError('');
-      const response = await fetch(`/api/stocks/signals?symbol=${symbol}`);
+      setBatchLoading(true);
+      
+      const response = await fetch('/api/stocks/nifty50', {
+        method: 'POST'
+      });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch stock signal');
-      }
-
-      const data = await response.json();
-
-      if (data.error) {
-        setError(data.error);
-        setStockData(null);
-      } else {
-        setStockData(data);
-        setSelectedStock(symbol);
+      if (response.ok) {
+        const data = await response.json();
+        setAllStocks(data.results || []);
         setLastUpdated(new Date());
       }
-    } catch (error: any) {
-      console.error('Error fetching stock signal:', error);
-      setError(error.message || 'Failed to fetch stock data');
-      setStockData(null);
+    } catch (error) {
+      console.error('Batch processing error:', error);
     } finally {
-      setLoading(false);
+      setBatchLoading(false);
     }
   };
 
   const fetchStockNews = async (symbol: string) => {
     try {
       setNewsLoading(true);
-      // Extract just the symbol name for news search
-      const symbolName = symbol.split('|')[1]?.substring(0, 4) || symbol;
       
-      const response = await fetch(`/api/scraper/news?symbol=${symbolName}&maxResults=5`);
+      const response = await fetch(`/api/scraper/news?symbol=${encodeURIComponent(symbol)}&maxResults=5`);
       
       if (response.ok) {
         const data = await response.json();
@@ -144,47 +175,20 @@ export default function Home() {
     }
   };
 
-  const fetchHistoricalData = async (symbol: string) => {
-    try {
-      const response = await fetch(`/api/stocks/historical?symbol=${symbol}&days=30`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        setHistoricalData(data);
-      }
-    } catch (error) {
-      console.error('Error fetching historical data:', error);
+  const handleStockClick = (symbol: string) => {
+    const stock = allStocks.find(s => s.symbol === symbol);
+    if (stock) {
+      setSelectedStock(stock);
+      fetchStockNews(symbol);
     }
   };
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchSymbol) {
-      fetchStockSignal(searchSymbol);
-      fetchStockNews(searchSymbol);
-      fetchHistoricalData(searchSymbol);
-    }
+  const clearFilters = () => {
+    setSignalFilter('ALL');
+    setRiskFilter('ALL');
+    setSectorFilter('ALL');
+    setSearchQuery('');
   };
-
-  const handleRefresh = () => {
-    if (selectedStock) {
-      fetchStockSignal(selectedStock);
-      fetchStockNews(selectedStock);
-      fetchHistoricalData(selectedStock);
-    }
-  };
-
-  // Calculate trend
-  const calculateTrend = (data: any) => {
-    if (!data || !data.signal) return null;
-    const currentPrice = data.signal.entryPrice;
-    const targetPrice = data.signal.targetPrice;
-    if (!targetPrice) return null;
-    const change = ((targetPrice - currentPrice) / currentPrice) * 100;
-    return change;
-  };
-
-  const trend = calculateTrend(stockData);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
@@ -195,227 +199,265 @@ export default function Home() {
             <div>
               <h1 className="text-2xl font-bold text-white flex items-center gap-2">
                 <Activity className="w-8 h-8 text-primary-500" />
-                QuantApp
+                QuantApp - Nifty 50 Dashboard
               </h1>
               <p className="text-sm text-gray-400 mt-1">
-                Real-time quantitative trading signals with AI insights
+                Real-time analysis of all 50 Nifty stocks with AI insights
               </p>
             </div>
-            <div className="flex items-center gap-4 flex-wrap">
-              <form onSubmit={handleSearch} className="flex gap-2">
-                <input
-                  type="text"
-                  value={searchSymbol}
-                  onChange={(e) => setSearchSymbol(e.target.value)}
-                  placeholder="e.g., NSE_EQ|INE002A01018"
-                  className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 w-80"
-                />
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors font-medium"
-                >
-                  Analyze
-                </button>
-              </form>
-              
-              {selectedStock && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleRefresh}
-                    disabled={loading}
-                    className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                    Refresh
-                  </button>
-                  
-                  <button
-                    onClick={() => setAutoRefresh(!autoRefresh)}
-                    className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 font-medium ${
-                      autoRefresh
-                        ? 'bg-green-600/20 text-green-400 border border-green-600/50'
-                        : 'bg-gray-800 text-gray-300 border border-gray-700'
-                    }`}
-                  >
-                    <Zap className="w-4 h-4" />
-                    Live: {autoRefresh ? 'ON' : 'OFF'}
-                  </button>
-                  
-                  <div className="text-xs text-gray-500">
-                    Updated: {lastUpdated.toLocaleTimeString()}
-                  </div>
+            
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Market Status */}
+              <div className={`px-4 py-2 rounded-lg border ${
+                marketStatus.isOpen 
+                  ? 'border-green-600/50 bg-green-600/10 text-green-400'
+                  : 'border-red-600/50 bg-red-600/10 text-red-400'
+              }`}>
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Clock className="w-4 h-4" />
+                  {marketStatus.message}
                 </div>
-              )}
+                {marketStatus.nextOpenTime && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Next: {marketStatus.nextOpenTime}
+                  </div>
+                )}
+              </div>
+
+              {/* Auto Refresh Toggle */}
+              <button
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                disabled={!marketStatus.isOpen}
+                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 font-medium ${
+                  autoRefresh
+                    ? 'bg-green-600/20 text-green-400 border border-green-600/50'
+                    : 'bg-gray-800 text-gray-300 border border-gray-700'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                <Zap className="w-4 h-4" />
+                Auto Refresh: {autoRefresh ? 'ON' : 'OFF'}
+              </button>
+
+              {/* Refresh Button */}
+              <button
+                onClick={loadAllStocks}
+                disabled={batchLoading}
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-2 font-medium"
+              >
+                <RefreshCw className={`w-4 h-4 ${batchLoading ? 'animate-spin' : ''}`} />
+                {batchLoading ? 'Loading...' : 'Refresh All'}
+              </button>
             </div>
           </div>
+
+          {lastUpdated && (
+            <div className="text-xs text-gray-500 mt-2">
+              Last updated: {lastUpdated.toLocaleString()}
+            </div>
+          )}
         </div>
       </header>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Cards */}
-        {!loading && screenerData && (
-          <CardGrid className="mb-8">
-            <Card className="border-l-4 border-l-green-500 hover:border-l-green-400 transition-colors">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-400">Buy Signals</p>
-                  <p className="text-3xl font-bold text-white mt-2">
-                    {screenerData.bySignal.buy}
-                  </p>
-                </div>
-                <TrendingUp className="w-12 h-12 text-green-500" />
+        <CardGrid className="mb-8">
+          <Card className="border-l-4 border-l-blue-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-400">Total Stocks</p>
+                <p className="text-3xl font-bold text-white mt-2">{stats.total}</p>
+                <p className="text-xs text-gray-500 mt-1">Nifty 50</p>
               </div>
-            </Card>
-
-            <Card className="border-l-4 border-l-red-500 hover:border-l-red-400 transition-colors">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-400">Sell Signals</p>
-                  <p className="text-3xl font-bold text-white mt-2">
-                    {screenerData.bySignal.sell}
-                  </p>
-                </div>
-                <TrendingDown className="w-12 h-12 text-red-500" />
-              </div>
-            </Card>
-
-            <Card className="border-l-4 border-l-blue-500 hover:border-l-blue-400 transition-colors">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-400">Total Signals</p>
-                  <p className="text-3xl font-bold text-white mt-2">
-                    {screenerData.total}
-                  </p>
-                </div>
-                <Activity className="w-12 h-12 text-blue-500" />
-              </div>
-            </Card>
-          </CardGrid>
-        )}
-
-        {/* Risk Distribution */}
-        {!loading && screenerData && (
-          <Card title="📊 Risk Distribution by Level" className="mb-8">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-4 bg-green-500/10 border border-green-500/30 rounded-lg hover:border-green-500/50 transition-colors">
-                <p className="text-sm text-gray-400 mb-2">Low Risk</p>
-                <p className="text-3xl font-bold text-green-500">{screenerData.byRisk.low}</p>
-                <p className="text-xs text-gray-500 mt-1">Safe trades</p>
-              </div>
-              <div className="text-center p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg hover:border-yellow-500/50 transition-colors">
-                <p className="text-sm text-gray-400 mb-2">Medium Risk</p>
-                <p className="text-3xl font-bold text-yellow-500">{screenerData.byRisk.medium}</p>
-                <p className="text-xs text-gray-500 mt-1">Balanced</p>
-              </div>
-              <div className="text-center p-4 bg-orange-500/10 border border-orange-500/30 rounded-lg hover:border-orange-500/50 transition-colors">
-                <p className="text-sm text-gray-400 mb-2">High Risk</p>
-                <p className="text-3xl font-bold text-orange-500">{screenerData.byRisk.high}</p>
-                <p className="text-xs text-gray-500 mt-1">Aggressive</p>
-              </div>
-              <div className="text-center p-4 bg-red-500/10 border border-red-500/30 rounded-lg hover:border-red-500/50 transition-colors">
-                <p className="text-sm text-gray-400 mb-2">Extreme Risk</p>
-                <p className="text-3xl font-bold text-red-500">{screenerData.byRisk.extreme}</p>
-                <p className="text-xs text-gray-500 mt-1">High caution</p>
-              </div>
+              <Activity className="w-12 h-12 text-blue-500" />
             </div>
           </Card>
-        )}
 
-        {/* Stock Details & Analysis */}
-        {stockData && stockData.signal && (
-          <Card title={`📈 ${selectedStock} - Signal Analysis`} className="mb-8">
+          <Card className="border-l-4 border-l-green-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-400">Buy Signals</p>
+                <p className="text-3xl font-bold text-green-500 mt-2">{stats.buySignals}</p>
+                <p className="text-xs text-gray-500 mt-1">Strong opportunities</p>
+              </div>
+              <TrendingUp className="w-12 h-12 text-green-500" />
+            </div>
+          </Card>
+
+          <Card className="border-l-4 border-l-red-500">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-400">Sell Signals</p>
+                <p className="text-3xl font-bold text-red-500 mt-2">{stats.sellSignals}</p>
+                <p className="text-xs text-gray-500 mt-1">Exit warnings</p>
+              </div>
+              <TrendingDown className="w-12 h-12 text-red-500" />
+            </div>
+          </Card>
+        </CardGrid>
+
+        {/* Risk Distribution */}
+        <Card title="📊 Risk Distribution" className="mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+              <p className="text-sm text-gray-400 mb-2">Low Risk</p>
+              <p className="text-3xl font-bold text-green-500">{stats.lowRisk}</p>
+            </div>
+            <div className="text-center p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+              <p className="text-sm text-gray-400 mb-2">Medium Risk</p>
+              <p className="text-3xl font-bold text-yellow-500">{stats.mediumRisk}</p>
+            </div>
+            <div className="text-center p-4 bg-orange-500/10 border border-orange-500/30 rounded-lg">
+              <p className="text-sm text-gray-400 mb-2">High Risk</p>
+              <p className="text-3xl font-bold text-orange-500">{stats.highRisk}</p>
+            </div>
+            <div className="text-center p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <p className="text-sm text-gray-400 mb-2">Extreme Risk</p>
+              <p className="text-3xl font-bold text-red-500">{stats.extremeRisk}</p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Filters */}
+        <Card title="🔍 Filter & Search" className="mb-8">
+          <div className="space-y-4">
+            {/* Search */}
+            <div>
+              <label className="text-sm text-gray-400 mb-2 block">Search Stocks</label>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by name, symbol, or sector..."
+                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+
+            {/* Filter Buttons */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Signal Filter */}
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Signal Type</label>
+                <div className="flex gap-2 flex-wrap">
+                  {(['ALL', 'BUY', 'SELL', 'HOLD'] as const).map(sig => (
+                    <button
+                      key={sig}
+                      onClick={() => setSignalFilter(sig)}
+                      className={`px-3 py-1 rounded text-sm transition-colors ${
+                        signalFilter === sig
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                      }`}
+                    >
+                      {sig}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Risk Filter */}
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Risk Level</label>
+                <div className="flex gap-2 flex-wrap">
+                  {(['ALL', 'LOW', 'MEDIUM', 'HIGH'] as const).map(risk => (
+                    <button
+                      key={risk}
+                      onClick={() => setRiskFilter(risk)}
+                      className={`px-3 py-1 rounded text-sm transition-colors ${
+                        riskFilter === risk
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                      }`}
+                    >
+                      {risk}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sector Filter */}
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Sector</label>
+                <select
+                  value={sectorFilter}
+                  onChange={(e) => setSectorFilter(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  {allSectors.map(sector => (
+                    <option key={sector} value={sector}>{sector}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Clear Filters */}
+            {(signalFilter !== 'ALL' || riskFilter !== 'ALL' || sectorFilter !== 'ALL' || searchQuery) && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors text-sm"
+              >
+                <X className="w-4 h-4" />
+                Clear Filters
+              </button>
+            )}
+          </div>
+        </Card>
+
+        {/* Selected Stock Details */}
+        {selectedStock && selectedStock.signal && (
+          <Card title={`📈 ${selectedStock.shortName} - Detailed Analysis`} className="mb-8">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-4">
-                {/* Signal Overview */}
+                {/* Overview */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <p className="text-sm text-gray-400">Signal</p>
-                    <span
-                      className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border mt-1 ${getSignalColor(
-                        stockData.signal.type
-                      )}`}
-                    >
-                      {stockData.signal.type}
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border mt-1 ${getSignalColor(selectedStock.signal.type)}`}>
+                      {selectedStock.signal.type}
                     </span>
                   </div>
                   <div>
                     <p className="text-sm text-gray-400">Confidence</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="flex-1 bg-gray-700 rounded-full h-2">
-                        <div
-                          className={`h-2 rounded-full ${
-                            stockData.signal.confidence >= 70
-                              ? 'bg-green-500'
-                              : stockData.signal.confidence >= 50
-                              ? 'bg-yellow-500'
-                              : 'bg-red-500'
-                          }`}
-                          style={{ width: `${stockData.signal.confidence}%` }}
-                        ></div>
-                      </div>
-                      <p className="text-lg font-semibold text-white w-12">
-                        {stockData.signal.confidence?.toFixed(0)}%
-                      </p>
-                    </div>
+                    <p className="text-lg font-semibold text-white mt-1">
+                      {selectedStock.signal.confidence?.toFixed(0)}%
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-400">Risk Level</p>
-                    <span
-                      className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border mt-1 ${getRiskColor(
-                        stockData.signal.riskScore?.level
-                      )}`}
-                    >
-                      {stockData.signal.riskScore?.level}
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border mt-1 ${getRiskColor(selectedStock.signal.riskScore?.level)}`}>
+                      {selectedStock.signal.riskScore?.level}
                     </span>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-400">Risk Score</p>
-                    <p className={`text-lg font-semibold mt-1 ${
-                      stockData.signal.riskScore.score < 30 ? 'text-green-500' :
-                      stockData.signal.riskScore.score < 60 ? 'text-yellow-500' :
-                      stockData.signal.riskScore.score < 80 ? 'text-orange-500' :
-                      'text-red-500'
-                    }`}>
-                      {stockData.signal.riskScore.score.toFixed(2)}
-                    </p>
+                    <p className="text-sm text-gray-400">Sector</p>
+                    <p className="text-sm font-semibold text-white mt-1">{selectedStock.sector}</p>
                   </div>
                 </div>
 
                 {/* Price Levels */}
                 <div className="border-t border-gray-800 pt-4">
-                  <h4 className="text-sm font-medium text-gray-400 mb-3">💰 Price Levels & Targets</h4>
+                  <h4 className="text-sm font-medium text-gray-400 mb-3">💰 Price Levels</h4>
                   <div className="grid grid-cols-3 gap-4">
                     <div className="bg-gray-800/30 p-3 rounded-lg">
-                      <p className="text-xs text-gray-500 mb-1">Entry Price</p>
+                      <p className="text-xs text-gray-500 mb-1">Entry</p>
                       <p className="text-lg font-semibold text-white">
-                        {formatCurrency(stockData.signal.entryPrice)}
+                        {formatCurrency(selectedStock.signal.entryPrice)}
                       </p>
                     </div>
-                    {stockData.signal.targetPrice && (
+                    {selectedStock.signal.targetPrice && (
                       <div className="bg-green-500/10 p-3 rounded-lg border border-green-500/30">
-                        <p className="text-xs text-gray-500 mb-1">Target Price</p>
+                        <p className="text-xs text-gray-500 mb-1">Target</p>
                         <p className="text-lg font-semibold text-green-500">
-                          {formatCurrency(stockData.signal.targetPrice)}
+                          {formatCurrency(selectedStock.signal.targetPrice)}
                         </p>
-                        {trend && (
-                          <p className="text-xs text-green-400 mt-1">
-                            +{trend.toFixed(2)}% potential
-                          </p>
-                        )}
                       </div>
                     )}
-                    {stockData.signal.stopLoss && (
+                    {selectedStock.signal.stopLoss && (
                       <div className="bg-red-500/10 p-3 rounded-lg border border-red-500/30">
                         <p className="text-xs text-gray-500 mb-1">Stop Loss</p>
                         <p className="text-lg font-semibold text-red-500">
-                          {formatCurrency(stockData.signal.stopLoss)}
+                          {formatCurrency(selectedStock.signal.stopLoss)}
                         </p>
-                        {trend && (
-                          <p className="text-xs text-red-400 mt-1">
-                            {(((stockData.signal.stopLoss - stockData.signal.entryPrice) / stockData.signal.entryPrice) * 100).toFixed(2)}%
-                          </p>
-                        )}
                       </div>
                     )}
                   </div>
@@ -427,216 +469,123 @@ export default function Home() {
                   <div className="grid grid-cols-3 gap-4">
                     <div className="bg-gray-800/30 p-3 rounded-lg">
                       <p className="text-xs text-gray-500 mb-1">RSI (14)</p>
-                      <p
-                        className={`text-lg font-semibold ${
-                          stockData.signal.indicators.rsi > 70
-                            ? 'text-red-500'
-                            : stockData.signal.indicators.rsi < 30
-                            ? 'text-green-500'
-                            : 'text-white'
-                        }`}
-                      >
-                        {stockData.signal.indicators.rsi.toFixed(2)}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {stockData.signal.indicators.rsi > 70 ? 'Overbought' :
-                         stockData.signal.indicators.rsi < 30 ? 'Oversold' :
-                         'Neutral'}
+                      <p className={`text-lg font-semibold ${
+                        selectedStock.signal.indicators.rsi > 70 ? 'text-red-500' :
+                        selectedStock.signal.indicators.rsi < 30 ? 'text-green-500' :
+                        'text-white'
+                      }`}>
+                        {selectedStock.signal.indicators.rsi.toFixed(2)}
                       </p>
                     </div>
                     <div className="bg-gray-800/30 p-3 rounded-lg">
-                      <p className="text-xs text-gray-500 mb-1">MACD Histogram</p>
-                      <p
-                        className={`text-lg font-semibold ${
-                          stockData.signal.indicators.macd.histogram > 0
-                            ? 'text-green-500'
-                            : 'text-red-500'
-                        }`}
-                      >
-                        {stockData.signal.indicators.macd.histogram.toFixed(2)}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {stockData.signal.indicators.macd.histogram > 0 ? 'Bullish' : 'Bearish'}
+                      <p className="text-xs text-gray-500 mb-1">MACD</p>
+                      <p className={`text-lg font-semibold ${
+                        selectedStock.signal.indicators.macd.histogram > 0
+                          ? 'text-green-500'
+                          : 'text-red-500'
+                      }`}>
+                        {selectedStock.signal.indicators.macd.histogram.toFixed(2)}
                       </p>
                     </div>
                     <div className="bg-gray-800/30 p-3 rounded-lg">
                       <p className="text-xs text-gray-500 mb-1">Volume Ratio</p>
                       <p className="text-lg font-semibold text-white">
-                        {stockData.signal.indicators.volumeRatio.toFixed(2)}x
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {stockData.signal.indicators.volumeRatio > 1.5 ? 'Above Average' : 'Normal'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Risk Breakdown */}
-                <div className="border-t border-gray-800 pt-4">
-                  <h4 className="text-sm font-medium text-gray-400 mb-3">⚠️ Risk Breakdown</h4>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div className="bg-gray-800/30 p-3 rounded-lg">
-                      <p className="text-gray-500">Volatility Risk</p>
-                      <p className="text-lg font-semibold text-white mt-1">
-                        {stockData.signal.riskScore.breakdown.volatilityRisk.toFixed(1)}
-                      </p>
-                    </div>
-                    <div className="bg-gray-800/30 p-3 rounded-lg">
-                      <p className="text-gray-500">Volume Risk</p>
-                      <p className="text-lg font-semibold text-white mt-1">
-                        {stockData.signal.riskScore.breakdown.volumeRisk.toFixed(1)}
-                      </p>
-                    </div>
-                    <div className="bg-gray-800/30 p-3 rounded-lg">
-                      <p className="text-gray-500">Price Risk</p>
-                      <p className="text-lg font-semibold text-white mt-1">
-                        {stockData.signal.riskScore.breakdown.priceRisk.toFixed(1)}
+                        {selectedStock.signal.indicators.volumeRatio.toFixed(2)}x
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Signal Reasons & Expert Tips */}
-              <div className="space-y-4">
-                <div className="bg-gradient-to-br from-primary-500/20 to-primary-600/10 border border-primary-500/30 rounded-lg p-4">
-                  <h4 className="text-sm font-medium text-primary-400 mb-3 flex items-center gap-2">
-                    <Zap className="w-4 h-4" />
-                    Signal Reasons
-                  </h4>
-                  <ul className="space-y-2">
-                    {stockData.signal.reasons.map((reason: string, index: number) => (
-                      <li key={index} className="flex items-start gap-2 text-sm text-gray-300">
-                        <AlertCircle className="w-4 h-4 text-primary-500 mt-0.5 flex-shrink-0" />
-                        {reason}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/30 rounded-lg p-4">
-                  <h4 className="text-sm font-medium text-amber-400 mb-3 flex items-center gap-2">
-                    <User className="w-4 h-4" />
-                    Expert Tips
-                  </h4>
-                  <ul className="space-y-2 text-sm text-gray-300">
-                    <li>✓ Risk-Reward: 1:{stockData.signal.riskReward?.toFixed(2) || 'N/A'}</li>
-                    <li>✓ Position Size: {
-                      stockData.signal.riskScore.level === 'LOW' ? 'LARGE (Conservative)' :
-                      stockData.signal.riskScore.level === 'MEDIUM' ? 'MEDIUM (Balanced)' :
-                      'SMALL (Aggressive)'
-                    }</li>
-                    <li>✓ Volatility: {stockData.signal.riskScore.volatility.toFixed(2)}%</li>
-                    <li>✓ Trend: {stockData.signal.type === 'BUY' ? '📈 Bullish' : '📉 Bearish'}</li>
-                  </ul>
-                </div>
+              {/* Signal Reasons */}
+              <div className="bg-gradient-to-br from-primary-500/20 to-primary-600/10 border border-primary-500/30 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-primary-400 mb-3 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  Signal Reasons
+                </h4>
+                <ul className="space-y-2">
+                  {selectedStock.signal.reasons.map((reason: string, index: number) => (
+                    <li key={index} className="flex items-start gap-2 text-sm text-gray-300">
+                      <span className="text-primary-500 mt-0.5">•</span>
+                      {reason}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           </Card>
         )}
 
         {/* News Section */}
-        {selectedStock && (
-          <Card title="📰 Latest News & Market Sentiment" className="mb-8">
+        {selectedStock && newsData && (
+          <Card title={`📰 Latest News - ${newsData.shortName}`} className="mb-8">
             {newsLoading ? (
               <div className="flex items-center justify-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
               </div>
-            ) : newsData && newsData.news && newsData.news.length > 0 ? (
+            ) : newsData.news && newsData.news.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Overall Sentiment */}
                 <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/30 rounded-lg p-4 md:col-span-2">
                   <h4 className="text-sm font-medium text-blue-400 mb-2">Market Sentiment</h4>
                   <div className="flex items-center gap-4">
-                    <div>
-                      <p className="text-3xl font-bold text-blue-500">
-                        {newsData.overallSentiment?.charAt(0).toUpperCase() + newsData.overallSentiment?.slice(1)}
-                      </p>
-                      <p className="text-sm text-gray-400 mt-1">
-                        Avg Sentiment: {newsData.avgSentimentScore?.toFixed(2)}
-                      </p>
-                    </div>
-                    <div className="flex-1">
-                      <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${
-                            newsData.overallSentiment === 'positive'
-                              ? 'bg-green-500'
-                              : newsData.overallSentiment === 'negative'
-                              ? 'bg-red-500'
-                              : 'bg-yellow-500'
-                          }`}
-                          style={{
-                            width: `${((newsData.avgSentimentScore + 1) / 2) * 100}%`,
-                          }}
-                        ></div>
-                      </div>
-                    </div>
+                    <p className="text-3xl font-bold text-blue-500">
+                      {newsData.overallSentiment?.charAt(0).toUpperCase() + newsData.overallSentiment?.slice(1)}
+                    </p>
+                    <p className="text-sm text-gray-400">
+                      Score: {newsData.avgSentimentScore?.toFixed(2)}
+                    </p>
                   </div>
                 </div>
 
-                {/* News Items */}
                 {newsData.news.slice(0, 4).map((item: any, index: number) => (
                   <NewsCard key={index} news={item} />
                 ))}
               </div>
             ) : (
               <div className="text-center py-8 text-gray-400">
-                <p>No news available for this symbol</p>
+                <p>No news available</p>
               </div>
             )}
           </Card>
         )}
 
-        {/* Buy Signals Table */}
-        {!loading && screenerData && screenerData.groups.buySignals.length > 0 && (
-          <Card title="🟢 Top Buy Signals" subtitle="Sorted by confidence" className="mb-8">
-            <StockList
-              stocks={screenerData.groups.buySignals.slice(0, 10)}
-              onStockClick={fetchStockSignal}
-            />
-          </Card>
-        )}
-
-        {/* Low Risk Opportunities */}
-        {!loading && screenerData && screenerData.groups.lowRisk.length > 0 && (
-          <Card title="🛡️ Low Risk Opportunities" subtitle="Conservative picks" className="mb-8">
-            <StockList
-              stocks={screenerData.groups.lowRisk.slice(0, 10)}
-              onStockClick={fetchStockSignal}
-            />
-          </Card>
-        )}
-
-        {/* Error State */}
-        {error && (
-          <Card className="mb-8 border-l-4 border-l-red-500 bg-red-500/10">
-            <div className="flex items-center gap-4">
-              <AlertCircle className="w-12 h-12 text-red-500 flex-shrink-0" />
-              <div>
-                <h3 className="text-lg font-semibold text-white">Error</h3>
-                <p className="text-gray-400 mt-1">{error}</p>
-                <p className="text-sm text-gray-500 mt-2">
-                  Try a different stock symbol or check your Upstox API credentials.
-                </p>
-              </div>
+        {/* All Stocks Table */}
+        <Card 
+          title={`📊 ${filteredStocks.length === allStocks.length ? 'All' : 'Filtered'} Nifty 50 Stocks`}
+          subtitle={`Showing ${filteredStocks.length} of ${allStocks.length} stocks`}
+        >
+          {batchLoading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mb-4"></div>
+              <p className="text-gray-400">Loading Nifty 50 stocks...</p>
             </div>
-          </Card>
-        )}
-
-        {/* Loading State */}
-        {loading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
-          </div>
-        )}
+          ) : filteredStocks.length > 0 ? (
+            <StockList
+              stocks={filteredStocks}
+              onStockClick={handleStockClick}
+            />
+          ) : (
+            <div className="text-center py-12 text-gray-400">
+              <p className="mb-4">No stocks match your filters</p>
+              <button
+                onClick={clearFilters}
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
+        </Card>
       </main>
 
       {/* Footer */}
       <footer className="border-t border-gray-800 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <p className="text-center text-sm text-gray-400">
-            QuantApp - Quantitative Trading Dashboard | Data by Upstox API | News by DuckDuckGo
+            QuantApp - Nifty 50 Quantitative Trading Dashboard | Real-time market data & AI-powered insights
+          </p>
+          <p className="text-center text-xs text-gray-500 mt-2">
+            Data: Upstox API | News: Web Search | Analysis: Advanced Technical Indicators
           </p>
         </div>
       </footer>
