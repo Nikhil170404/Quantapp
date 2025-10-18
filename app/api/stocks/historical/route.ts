@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const symbol = searchParams.get('symbol');
-    const interval = searchParams.get('interval') || '1day';
+    const interval = searchParams.get('interval') || 'day';  // ✅ FIXED: Changed default from '1day' to 'day'
     const days = parseInt(searchParams.get('days') || '90');
 
     if (!symbol) {
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Cache for 1 hour for daily data, 15 minutes for intraday
-    const cacheTTL = interval === '1day' ? 3600 : 900;
+    const cacheTTL = interval === 'day' ? 3600 : 900;  // ✅ FIXED: Changed check from '1day' to 'day'
     await setCachedData(cacheKey, result, cacheTTL);
 
     return NextResponse.json(result);

@@ -35,25 +35,25 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch historical data from Upstox
-    // IMPORTANT: Using hardcoded dates because system date appears to be wrong (showing 2025)
-    // In production, use current date
-    const toDate = '2024-12-17'; // Today's actual date
-    const fromDate = '2024-09-17'; // 90 days ago
+    const toDate = new Date();
+    const fromDate = new Date();
+    fromDate.setDate(toDate.getDate() - 90);
+
+    const formatDate = (date: Date) => date.toISOString().split('T')[0];
 
     console.log('Requesting historical data:', {
       symbol,
-      fromDate,
-      toDate,
-      note: 'Using hardcoded 2024 dates - your system clock shows 2025 which is incorrect',
+      fromDate: formatDate(fromDate),
+      toDate: formatDate(toDate),
     });
 
     let historicalData;
     try {
       historicalData = await upstoxClient.getHistoricalData(
         symbol,
-        '1day',
+        'day',  // ✅ FIXED: Changed from '1day' to 'day'
         formatDate(fromDate),
-        formatDate(today)
+        formatDate(toDate)
       );
     } catch (error: any) {
       console.error('Upstox API error:', error);
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
 
           const historicalData = await upstoxClient.getHistoricalData(
             symbol,
-            '1day',
+            'day',  // ✅ FIXED: Changed from '1day' to 'day'
             formatDate(fromDate),
             formatDate(today)
           );

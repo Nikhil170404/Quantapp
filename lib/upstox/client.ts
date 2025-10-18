@@ -28,7 +28,7 @@ export interface UpstoxConfig {
 }
 
 export class UpstoxClient {
-  private baseUrl = 'https://api-v2.upstox.com';
+  private baseUrl = 'https://api.upstox.com/v2';  // ✅ Correct API endpoint
   private accessToken: string;
   private client: AxiosInstance;
 
@@ -73,8 +73,16 @@ export class UpstoxClient {
 
   /**
    * Get historical candle data
+   * 
+   * Valid intervals:
+   * - 1minute: last 1 month candles
+   * - 30minute: last 1 year candles  
+   * - day: last 1 year candles
+   * - week: last 10 years candles
+   * - month: last 10 years candles
+   * 
    * @param symbol Instrument key (e.g., "NSE_EQ|INE002A01018")
-   * @param interval 1minute, 5minute, 10minute, 30minute, 60minute, 1day, 1week, 1month
+   * @param interval 1minute | 30minute | day | week | month
    * @param fromDate YYYY-MM-DD
    * @param toDate YYYY-MM-DD
    */
@@ -85,8 +93,16 @@ export class UpstoxClient {
     toDate: string
   ): Promise<HistoricalCandle[]> {
     try {
+      // Validate interval
+      const validIntervals = ['1minute', '30minute', 'day', 'week', 'month'];
+      if (!validIntervals.includes(interval)) {
+        throw new Error(`Invalid interval: ${interval}. Valid intervals are: ${validIntervals.join(', ')}`);
+      }
+
       // URL encode the symbol to handle special characters like |
       const encodedSymbol = encodeURIComponent(symbol);
+      
+      // Format: /historical-candle/{instrument_key}/{interval}/{to_date}/{from_date}
       const url = `/historical-candle/${encodedSymbol}/${interval}/${toDate}/${fromDate}`;
 
       console.log('Upstox API Request:', {
@@ -132,12 +148,22 @@ export class UpstoxClient {
         message: error.message,
       });
 
-      // Provide more helpful error messages
+      // Better error message extraction
       if (error.response?.status === 400) {
-        const errorMsg = error.response?.data?.message || error.response?.data?.errors || 'Invalid request';
+        let errorMsg = 'Invalid request';
+        
+        // Try to extract error from response
+        if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
+          const errorDetails = error.response.data.errors[0];
+          errorMsg = errorDetails?.message || JSON.stringify(errorDetails);
+          console.error('Detailed Error:', errorDetails);
+        } else if (error.response?.data?.message) {
+          errorMsg = error.response.data.message;
+        }
+        
         throw new Error(`Upstox API 400 Error: ${errorMsg}`);
       } else if (error.response?.status === 401) {
-        throw new Error('Upstox API authentication failed. Please check your access token.');
+        throw new Error('Upstox API authentication failed. Your access token may be invalid or expired. Please generate a new one from https://upstox.com/api/dashboard');
       } else if (error.response?.status === 429) {
         throw new Error('Rate limit exceeded. Please try again later.');
       }
@@ -149,7 +175,7 @@ export class UpstoxClient {
   /**
    * Get intraday candle data
    * @param symbol Instrument key
-   * @param interval 1minute, 5minute, 10minute, 30minute
+   * @param interval 1minute | 30minute
    */
   async getIntradayData(
     symbol: string,
