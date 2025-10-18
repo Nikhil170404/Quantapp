@@ -5,6 +5,23 @@ import { upstoxClient } from '@/lib/upstox/client';
 import { generateSignal } from '@/lib/strategies/signals';
 import { NIFTY50_STOCKS, getStockInfo } from '@/lib/constants/nifty50';
 
+interface ErrorDetail {
+  symbol: string;
+  name: string;
+  error: string;
+}
+
+interface StockResult {
+  symbol: string;
+  name: string;
+  shortName: string;
+  sector: string;
+  signal: any;
+  timestamp: Date;
+  dataPoints: number;
+  cached: boolean;
+}
+
 /**
  * Batch process all Nifty 50 stocks
  * This endpoint fetches and analyzes all 50 stocks
@@ -13,7 +30,7 @@ export async function POST(request: NextRequest) {
   try {
     // Rate limiting
     const ip = request.headers.get('x-forwarded-for') || '127.0.0.1';
-    const allowed = await checkRateLimit(ip, 10, 60000); // Stricter limit for batch operations
+    const allowed = await checkRateLimit(ip, 10, 60000);
 
     if (!allowed) {
       return NextResponse.json(
@@ -23,13 +40,17 @@ export async function POST(request: NextRequest) {
     }
 
     const { db } = await connectToDatabase();
-    const results = [];
-    const errors = [];
+    const results: StockResult[] = [];
+    const errors: ErrorDetail[] = [];
+
+    console.log(`Starting batch processing of ${NIFTY50_STOCKS.length} stocks...`);
 
     // Process stocks in batches of 5 to avoid overloading Upstox API
     const batchSize = 5;
     for (let i = 0; i < NIFTY50_STOCKS.length; i += batchSize) {
       const batch = NIFTY50_STOCKS.slice(i, i + batchSize);
+      
+      console.log(`Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(NIFTY50_STOCKS.length / batchSize)}...`);
       
       const batchPromises = batch.map(async (stockInfo) => {
         try {
@@ -40,10 +61,11 @@ export async function POST(request: NextRequest) {
           });
 
           if (existing) {
+            console.log(`Using cached data for ${stockInfo.shortName}`);
             return {
               ...existing,
               cached: true
-            };
+            } as StockResult;
           }
 
           // Fetch historical data
@@ -52,6 +74,8 @@ export async function POST(request: NextRequest) {
           fromDate.setDate(toDate.getDate() - 90);
 
           const formatDate = (date: Date) => date.toISOString().split('T')[0];
+
+          console.log(`Fetching data for ${stockInfo.shortName}...`);
 
           const historicalData = await upstoxClient.getHistoricalData(
             stockInfo.symbol,
@@ -64,6 +88,8 @@ export async function POST(request: NextRequest) {
             throw new Error('No historical data available');
           }
 
+          console.log(`Fetched ${historicalData.length} candles for ${stockInfo.shortName}`);
+
           // Extract prices and volumes
           const prices = historicalData.map((candle) => candle.close);
           const volumes = historicalData.map((candle) => candle.volume);
@@ -73,7 +99,7 @@ export async function POST(request: NextRequest) {
           // Generate signal
           const signal = generateSignal(prices, volumes, highs, lows);
 
-          const result = {
+          const result: StockResult = {
             symbol: stockInfo.symbol,
             name: stockInfo.name,
             shortName: stockInfo.shortName,
@@ -94,9 +120,10 @@ export async function POST(request: NextRequest) {
             { upsert: true }
           );
 
+          console.log(`✓ Successfully processed ${stockInfo.shortName}`);
           return result;
         } catch (error: any) {
-          console.error(`Error processing ${stockInfo.symbol}:`, error.message);
+          console.error(`✗ Error processing ${stockInfo.symbol}:`, error.message);
           errors.push({
             symbol: stockInfo.symbol,
             name: stockInfo.name,
@@ -107,13 +134,16 @@ export async function POST(request: NextRequest) {
       });
 
       const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults.filter(r => r !== null));
+      results.push(...batchResults.filter((r): r is StockResult => r !== null));
 
-      // Small delay between batches
+      // Delay between batches to respect rate limits
       if (i + batchSize < NIFTY50_STOCKS.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log('Waiting 2 seconds before next batch...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
+
+    console.log(`Batch processing complete: ${results.length} succeeded, ${errors.length} failed`);
 
     return NextResponse.json({
       success: true,
@@ -127,14 +157,17 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Batch processing error:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to process stocks' },
+      { 
+        error: error.message || 'Failed to process stocks',
+        details: 'Check server logs for more information'
+      },
       { status: 500 }
     );
   }
 }
 
 /**
- * Get batch processing status
+ * Get batch processing status and all signals
  */
 export async function GET(request: NextRequest) {
   try {
@@ -148,6 +181,8 @@ export async function GET(request: NextRequest) {
       })
       .sort({ timestamp: -1 })
       .toArray();
+
+    console.log(`Found ${signals.length} signals in database`);
 
     // Group by sector
     const bySector: Record<string, any[]> = {};

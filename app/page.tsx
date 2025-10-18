@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardGrid } from '@/components/ui/Card';
 import StockList from '@/components/tables/StockList';
 import NewsCard from '@/components/cards/NewsCard';
+import AddCustomStock from '@/components/AddCustomStock';
 import { formatCurrency, formatNumber, getRiskColor, getSignalColor } from '@/lib/utils';
 import { TrendingUp, TrendingDown, Activity, AlertCircle, RefreshCw, Zap, Clock, BarChart3, Filter, X } from 'lucide-react';
 import { NIFTY50_STOCKS, getMarketStatus, getAllSectors } from '@/lib/constants/nifty50';
@@ -16,6 +17,7 @@ interface StockSignal {
   signal: any;
   timestamp: string;
   cached?: boolean;
+  isCustom?: boolean;
 }
 
 interface NewsData {
@@ -38,6 +40,7 @@ export default function Home() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [processingStatus, setProcessingStatus] = useState<string>('');
   
   // Filters
   const [signalFilter, setSignalFilter] = useState<'ALL' | 'BUY' | 'SELL' | 'HOLD'>('ALL');
@@ -60,7 +63,7 @@ export default function Home() {
     extremeRisk: allStocks.filter(s => s.signal?.riskScore?.level === 'EXTREME').length,
   };
 
-  // Load all Nifty 50 stocks on mount
+  // Load all stocks on mount
   useEffect(() => {
     loadAllStocks();
   }, []);
@@ -113,7 +116,8 @@ export default function Home() {
 
   const loadAllStocks = async () => {
     try {
-      setBatchLoading(true);
+      setLoading(true);
+      setProcessingStatus('Checking existing data...');
       
       // First, try to get existing data
       const response = await fetch('/api/stocks/nifty50');
@@ -121,26 +125,35 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json();
         
+        console.log('Loaded data:', data);
+        
         if (data.total > 0) {
-          // We have some cached data, use it
-          const stocks = [...data.topBuy, ...data.topSell].slice(0, 50);
-          setAllStocks(stocks);
-          setLastUpdated(new Date(data.lastUpdate));
+          // We have data, display it
+          const allSignals = [...(data.topBuy || []), ...(data.topSell || [])];
+          setAllStocks(allSignals);
+          setLastUpdated(data.lastUpdate ? new Date(data.lastUpdate) : new Date());
+          setProcessingStatus('');
         } else {
-          // No data, trigger batch processing
+          // No data, need to trigger batch processing
+          setProcessingStatus('No data found. Starting batch processing...');
           await triggerBatchProcess();
         }
+      } else {
+        setProcessingStatus('Failed to load data. Starting batch processing...');
+        await triggerBatchProcess();
       }
     } catch (error) {
       console.error('Error loading stocks:', error);
+      setProcessingStatus('Error loading data. Please try again.');
     } finally {
-      setBatchLoading(false);
+      setLoading(false);
     }
   };
 
   const triggerBatchProcess = async () => {
     try {
       setBatchLoading(true);
+      setProcessingStatus('Processing all 50 Nifty stocks... This may take a few minutes.');
       
       const response = await fetch('/api/stocks/nifty50', {
         method: 'POST'
@@ -148,11 +161,25 @@ export default function Home() {
 
       if (response.ok) {
         const data = await response.json();
-        setAllStocks(data.results || []);
-        setLastUpdated(new Date());
+        console.log('Batch processing complete:', data);
+        
+        if (data.results && data.results.length > 0) {
+          setAllStocks(data.results);
+          setLastUpdated(new Date());
+          setProcessingStatus(`Successfully processed ${data.results.length} stocks!`);
+          
+          // Clear status after 3 seconds
+          setTimeout(() => setProcessingStatus(''), 3000);
+        } else {
+          setProcessingStatus(`Batch processing completed but no stocks were processed. ${data.errorDetails?.length || 0} errors occurred.`);
+        }
+      } else {
+        const errorData = await response.json();
+        setProcessingStatus(`Batch processing failed: ${errorData.error || 'Unknown error'}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Batch processing error:', error);
+      setProcessingStatus(`Error: ${error.message || 'Failed to process stocks'}`);
     } finally {
       setBatchLoading(false);
     }
@@ -188,6 +215,11 @@ export default function Home() {
     setRiskFilter('ALL');
     setSectorFilter('ALL');
     setSearchQuery('');
+  };
+
+  const handleStockAdded = () => {
+    // Reload stocks when a new custom stock is added
+    loadAllStocks();
   };
 
   return (
@@ -241,11 +273,11 @@ export default function Home() {
               {/* Refresh Button */}
               <button
                 onClick={loadAllStocks}
-                disabled={batchLoading}
+                disabled={batchLoading || loading}
                 className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-2 font-medium"
               >
-                <RefreshCw className={`w-4 h-4 ${batchLoading ? 'animate-spin' : ''}`} />
-                {batchLoading ? 'Loading...' : 'Refresh All'}
+                <RefreshCw className={`w-4 h-4 ${(batchLoading || loading) ? 'animate-spin' : ''}`} />
+                {batchLoading ? 'Processing...' : loading ? 'Loading...' : 'Refresh All'}
               </button>
             </div>
           </div>
@@ -253,6 +285,18 @@ export default function Home() {
           {lastUpdated && (
             <div className="text-xs text-gray-500 mt-2">
               Last updated: {lastUpdated.toLocaleString()}
+            </div>
+          )}
+
+          {/* Processing Status */}
+          {processingStatus && (
+            <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <p className="text-sm text-blue-400 flex items-center gap-2">
+                {(batchLoading || loading) && (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                )}
+                {processingStatus}
+              </p>
             </div>
           )}
         </div>
@@ -267,7 +311,11 @@ export default function Home() {
               <div>
                 <p className="text-sm text-gray-400">Total Stocks</p>
                 <p className="text-3xl font-bold text-white mt-2">{stats.total}</p>
-                <p className="text-xs text-gray-500 mt-1">Nifty 50</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {allStocks.filter(s => s.isCustom).length > 0 && 
+                    `Including ${allStocks.filter(s => s.isCustom).length} custom`
+                  }
+                </p>
               </div>
               <Activity className="w-12 h-12 text-blue-500" />
             </div>
@@ -551,19 +599,38 @@ export default function Home() {
 
         {/* All Stocks Table */}
         <Card 
-          title={`📊 ${filteredStocks.length === allStocks.length ? 'All' : 'Filtered'} Nifty 50 Stocks`}
+          title={`📊 ${filteredStocks.length === allStocks.length ? 'All' : 'Filtered'} Stocks`}
           subtitle={`Showing ${filteredStocks.length} of ${allStocks.length} stocks`}
         >
-          {batchLoading ? (
+          {batchLoading || loading ? (
             <div className="flex flex-col items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mb-4"></div>
-              <p className="text-gray-400">Loading Nifty 50 stocks...</p>
+              <p className="text-gray-400">
+                {batchLoading ? 'Processing Nifty 50 stocks...' : 'Loading stocks...'}
+              </p>
+              {batchLoading && (
+                <p className="text-sm text-gray-500 mt-2">
+                  This may take a few minutes for the first time
+                </p>
+              )}
             </div>
           ) : filteredStocks.length > 0 ? (
             <StockList
               stocks={filteredStocks}
               onStockClick={handleStockClick}
             />
+          ) : allStocks.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-400 mb-4">No stocks data available</p>
+              <button
+                onClick={triggerBatchProcess}
+                disabled={batchLoading}
+                className="px-6 py-3 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg transition-colors flex items-center gap-2 mx-auto"
+              >
+                <RefreshCw className={`w-5 h-5 ${batchLoading ? 'animate-spin' : ''}`} />
+                {batchLoading ? 'Processing...' : 'Process All Stocks'}
+              </button>
+            </div>
           ) : (
             <div className="text-center py-12 text-gray-400">
               <p className="mb-4">No stocks match your filters</p>
@@ -577,6 +644,9 @@ export default function Home() {
           )}
         </Card>
       </main>
+
+      {/* Add Custom Stock Floating Button */}
+      <AddCustomStock onStockAdded={handleStockAdded} />
 
       {/* Footer */}
       <footer className="border-t border-gray-800 mt-12">
