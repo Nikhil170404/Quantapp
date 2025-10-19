@@ -365,4 +365,5 @@ Built with Next.js, TypeScript, and Upstox API
  #   Q u a n t a p p  
  #   Q u a n t a p p  
  #   Q u a n t a p p  
+ #   Q u a n t a p p  
  
